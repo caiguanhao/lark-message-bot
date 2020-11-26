@@ -21,3 +21,47 @@ Make an HTTP JSON-RPC request to send message to the chat (so that everyone in t
 ```
 curl http://127.0.0.1:32123/jsonrpc/ --data '{"method":"Lark.SendMessage","params":[{"content":"test"}]}'
 ```
+
+## Lark.SendMessage
+
+Send plain text to chat.
+
+```js
+{
+  "content": "text"
+}
+```
+
+## Lark.SendPost
+
+Send message with text, links, images to chat.
+See [docs](https://open.feishu.cn/document/ukTMukTMukTM/uMDMxEjLzATMx4yMwETM).
+
+```js
+{
+  "post": {
+    "zh_cn": {
+      "title": "Title",
+      "content": [
+        [
+          {
+            "tag": "text",
+            "text": "Test: "
+          },
+          {
+            "tag": "a",
+            "text": "Google",
+            "href": "https://www.google.com"
+          }
+        ],
+        [
+          {
+            "tag": "text",
+            "text": "some text"
+          }
+        ]
+      ]
+    }
+  }
+}
+```
