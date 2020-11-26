@@ -89,7 +89,7 @@ type (
 	Post map[string]PostOfLocale
 )
 
-func (lark *LarkApi) NewRequest(path string, reqBody interface{}) (resp *http.Response, err error) {
+func (lark *LarkApi) NewRequest(path string, reqBody interface{}, respData interface{}) (err error) {
 	client := http.Client{
 		Timeout: 5 * time.Second,
 	}
@@ -107,15 +107,8 @@ func (lark *LarkApi) NewRequest(path string, reqBody interface{}) (resp *http.Re
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+lark.accessToken)
+	var resp *http.Response
 	resp, err = client.Do(req)
-	return
-}
-
-func (lark *LarkApi) GetAccessToken() (err error) {
-	resp, err := lark.NewRequest("/auth/v3/tenant_access_token/internal/", map[string]string{
-		"app_id":     lark.appId,
-		"app_secret": lark.appSecret,
-	})
 	if err != nil {
 		return
 	}
@@ -128,8 +121,26 @@ func (lark *LarkApi) GetAccessToken() (err error) {
 	if lark.debugger != nil {
 		lark.debugger(string(res))
 	}
+	err = json.Unmarshal(res, respData)
+	return
+
+}
+
+func (lark *LarkApi) GetAccessToken() (err error) {
 	var data AccessTokenResponse
-	err = json.Unmarshal(res, &data)
+	err = lark.NewRequest(
+		// path
+		"/auth/v3/tenant_access_token/internal/",
+
+		// request body
+		map[string]string{
+			"app_id":     lark.appId,
+			"app_secret": lark.appSecret,
+		},
+
+		// response
+		&data,
+	)
 	if err != nil {
 		return
 	}
@@ -139,24 +150,20 @@ func (lark *LarkApi) GetAccessToken() (err error) {
 }
 
 func (lark *LarkApi) CreateGroup(userOpenId string) (chatId string, err error) {
-	resp, err := lark.NewRequest("/chat/v4/create/", struct {
-		Name    string   `json:"name"`
-		OpenIds []string `json:"open_ids"`
-	}{"Messages", []string{userOpenId}})
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-	var res []byte
-	res, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-	if lark.debugger != nil {
-		lark.debugger(string(res))
-	}
 	var data GroupResponse
-	err = json.Unmarshal(res, &data)
+	err = lark.NewRequest(
+		// path
+		"/chat/v4/create/",
+
+		// request body
+		struct {
+			Name    string   `json:"name"`
+			OpenIds []string `json:"open_ids"`
+		}{"Messages", []string{userOpenId}},
+
+		// response
+		&data,
+	)
 	if err != nil {
 		return
 	}
@@ -169,24 +176,20 @@ func (lark *LarkApi) CreateGroup(userOpenId string) (chatId string, err error) {
 }
 
 func (lark *LarkApi) AddUserToChat(userOpenId, chatId string) (err error) {
-	resp, err := lark.NewRequest("/chat/v4/chatter/add/", struct {
-		ChatId  string   `json:"chat_id"`
-		OpenIDs []string `json:"open_ids"`
-	}{chatId, []string{userOpenId}})
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-	var res []byte
-	res, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-	if lark.debugger != nil {
-		lark.debugger(string(res))
-	}
 	var data GroupResponse
-	err = json.Unmarshal(res, &data)
+	err = lark.NewRequest(
+		// path
+		"/chat/v4/chatter/add/",
+
+		// request body
+		struct {
+			ChatId  string   `json:"chat_id"`
+			OpenIDs []string `json:"open_ids"`
+		}{chatId, []string{userOpenId}},
+
+		// response
+		&data,
+	)
 	if err != nil {
 		return
 	}
@@ -197,27 +200,23 @@ func (lark *LarkApi) AddUserToChat(userOpenId, chatId string) (err error) {
 }
 
 func (lark *LarkApi) SendMessage(chatId, content string) (err error) {
-	resp, err := lark.NewRequest("/message/v4/send/", struct {
-		ChatId  string      `json:"chat_id"`
-		MsgType string      `json:"msg_type"`
-		Content interface{} `json:"content"`
-	}{chatId, "text", struct {
-		Text string `json:"text"`
-	}{content}})
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-	var res []byte
-	res, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-	if lark.debugger != nil {
-		lark.debugger(string(res))
-	}
 	var data MessageResponse
-	err = json.Unmarshal(res, &data)
+	err = lark.NewRequest(
+		// path
+		"/message/v4/send/",
+
+		// request body
+		struct {
+			ChatId  string      `json:"chat_id"`
+			MsgType string      `json:"msg_type"`
+			Content interface{} `json:"content"`
+		}{chatId, "text", struct {
+			Text string `json:"text"`
+		}{content}},
+
+		// response
+		&data,
+	)
 	if err != nil {
 		return
 	}
@@ -228,27 +227,23 @@ func (lark *LarkApi) SendMessage(chatId, content string) (err error) {
 }
 
 func (lark *LarkApi) SendPost(chatId string, post Post) (err error) {
-	resp, err := lark.NewRequest("/message/v4/send/", struct {
-		ChatId  string      `json:"chat_id"`
-		MsgType string      `json:"msg_type"`
-		Content interface{} `json:"content"`
-	}{chatId, "post", struct {
-		Post Post `json:"post"`
-	}{post}})
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-	var res []byte
-	res, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-	if lark.debugger != nil {
-		lark.debugger(string(res))
-	}
 	var data MessageResponse
-	err = json.Unmarshal(res, &data)
+	err = lark.NewRequest(
+		// path
+		"/message/v4/send/",
+
+		// request body
+		struct {
+			ChatId  string      `json:"chat_id"`
+			MsgType string      `json:"msg_type"`
+			Content interface{} `json:"content"`
+		}{chatId, "post", struct {
+			Post Post `json:"post"`
+		}{post}},
+
+		// response
+		&data,
+	)
 	if err != nil {
 		return
 	}
