@@ -28,27 +28,29 @@ type (
 		debugger func(args ...interface{})
 	}
 
+	LarkApiResponse struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+
 	AccessTokenResponse struct {
-		Code   int    `json:"code"`
+		LarkApiResponse
 		Expire int    `json:"expire"`
-		Msg    string `json:"msg"`
 		Token  string `json:"tenant_access_token"`
 	}
 
 	GroupResponse struct {
-		Code int `json:"code"`
+		LarkApiResponse
 		Data struct {
 			ChatId string `json:"chat_id"`
 		} `json:"data"`
-		Msg string `json:"msg"`
 	}
 
 	MessageResponse struct {
-		Code int `json:"code"`
+		LarkApiResponse
 		Data struct {
 			MessageId string `json:"message_id"`
 		} `json:"data"`
-		Msg string `json:"msg"`
 	}
 
 	EventResponse struct {
@@ -121,9 +123,17 @@ func (lark *LarkApi) NewRequest(path string, reqBody interface{}, respData inter
 	if lark.debugger != nil {
 		lark.debugger(string(res))
 	}
+	var apiResp LarkApiResponse
+	err = json.Unmarshal(res, &apiResp)
+	if err != nil {
+		return
+	}
+	if apiResp.Msg != "ok" {
+		err = errLarkApiNotOK
+		return
+	}
 	err = json.Unmarshal(res, respData)
 	return
-
 }
 
 func (lark *LarkApi) GetAccessToken() (err error) {
@@ -167,11 +177,7 @@ func (lark *LarkApi) CreateGroup(userOpenId string) (chatId string, err error) {
 	if err != nil {
 		return
 	}
-	if data.Msg == "ok" {
-		chatId = data.Data.ChatId
-	} else {
-		err = errLarkApiNotOK
-	}
+	chatId = data.Data.ChatId
 	return
 }
 
@@ -192,9 +198,6 @@ func (lark *LarkApi) AddUserToChat(userOpenId, chatId string) (err error) {
 	)
 	if err != nil {
 		return
-	}
-	if data.Msg != "ok" {
-		err = errLarkApiNotOK
 	}
 	return
 }
@@ -217,12 +220,6 @@ func (lark *LarkApi) SendMessage(chatId, content string) (err error) {
 		// response
 		&data,
 	)
-	if err != nil {
-		return
-	}
-	if data.Msg != "ok" {
-		err = errLarkApiNotOK
-	}
 	return
 }
 
@@ -244,11 +241,5 @@ func (lark *LarkApi) SendPost(chatId string, post Post) (err error) {
 		// response
 		&data,
 	)
-	if err != nil {
-		return
-	}
-	if data.Msg != "ok" {
-		err = errLarkApiNotOK
-	}
 	return
 }
