@@ -65,6 +65,28 @@ type (
 			UserOpenID string `json:"user_open_id"`
 		} `json:"event"`
 	}
+
+	PostTag struct {
+		Tag      string `json:"tag"`
+		Unescape bool   `json:"un_escape"`
+		Text     string `json:"text"`
+		Href     string `json:"href"`
+		UserId   string `json:"user_id"`
+		ImageKey string `json:"image_key"`
+		Width    int    `json:"width"`
+		Height   int    `json:"height"`
+	}
+
+	PostLine []PostTag
+
+	PostLines []PostLine
+
+	PostOfLocale struct {
+		Title   string    `json:"title"`
+		Content PostLines `json:"content"`
+	}
+
+	Post map[string]PostOfLocale
 )
 
 func (lark *LarkApi) NewRequest(path string, reqBody interface{}) (resp *http.Response, err error) {
@@ -182,6 +204,37 @@ func (lark *LarkApi) SendMessage(chatId, content string) (err error) {
 	}{chatId, "text", struct {
 		Text string `json:"text"`
 	}{content}})
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	var res []byte
+	res, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+	if lark.debugger != nil {
+		lark.debugger(string(res))
+	}
+	var data MessageResponse
+	err = json.Unmarshal(res, &data)
+	if err != nil {
+		return
+	}
+	if data.Msg != "ok" {
+		err = errLarkApiNotOK
+	}
+	return
+}
+
+func (lark *LarkApi) SendPost(chatId string, post Post) (err error) {
+	resp, err := lark.NewRequest("/message/v4/send/", struct {
+		ChatId  string      `json:"chat_id"`
+		MsgType string      `json:"msg_type"`
+		Content interface{} `json:"content"`
+	}{chatId, "post", struct {
+		Post Post `json:"post"`
+	}{post}})
 	if err != nil {
 		return
 	}
