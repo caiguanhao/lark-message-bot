@@ -59,7 +59,9 @@ func (_h *httpHandler) init() (h *httpHandler) {
 
 func (h *httpHandler) serve(address string) {
 	http.HandleFunc("/jsonrpc/", h.handleJSONRPC)
-	http.HandleFunc("/", h.handleLarkEvents)
+	http.HandleFunc("/events/", h.handleLarkEvents)
+	http.HandleFunc("/", h.handle404)
+	log.Info("listening", address)
 	log.Fatal(http.ListenAndServe(address, nil))
 }
 
@@ -142,4 +144,8 @@ func (h *httpHandler) handleLarkEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *httpHandler) handle404(w http.ResponseWriter, r *http.Request) {
+	http.NotFound(w, r)
 }
