@@ -68,7 +68,7 @@ func (h *httpHandler) serve(address string) {
 func (h *httpHandler) updateAccessToken() {
 	defer func() {
 		time.Sleep(5 * time.Second)
-		h.lark.api.GetAccessToken()
+		h.updateAccessToken()
 	}()
 	h.lark.api.GetAccessToken()
 	secs := h.lark.api.accessTokenExpire - 60
