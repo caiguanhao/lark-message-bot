@@ -25,6 +25,11 @@ type (
 		debugger func(args ...interface{})
 	}
 
+	Protected struct {
+		Original interface{}
+		Filtered interface{}
+	}
+
 	LarkApiResponse struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
@@ -135,12 +140,23 @@ func (lark *LarkApi) NewRequest(path string, reqBody interface{}, respData inter
 		Timeout: 5 * time.Second,
 	}
 	var reqData []byte
-	reqData, err = json.Marshal(reqBody)
+	switch v := reqBody.(type) {
+	case Protected:
+		reqData, err = json.Marshal(v.Original)
+	default:
+		reqData, err = json.Marshal(v)
+	}
 	if err != nil {
 		return
 	}
 	if lark.debugger != nil {
-		lark.debugger(string(reqData))
+		switch v := reqBody.(type) {
+		case Protected:
+			reqDataFiltered, _ := json.Marshal(v.Filtered)
+			lark.debugger("request body:", string(reqDataFiltered))
+		default:
+			lark.debugger("request body:", string(reqData))
+		}
 	}
 	var req *http.Request
 	req, err = http.NewRequest("POST", larkApiPrefix+path, bytes.NewReader(reqData))
@@ -153,6 +169,9 @@ func (lark *LarkApi) NewRequest(path string, reqBody interface{}, respData inter
 	if err != nil {
 		return
 	}
+	if lark.debugger != nil {
+		lark.debugger(larkApiPrefix+path, "->", resp.Status)
+	}
 	defer resp.Body.Close()
 	var res []byte
 	res, err = ioutil.ReadAll(resp.Body)
@@ -160,7 +179,7 @@ func (lark *LarkApi) NewRequest(path string, reqBody interface{}, respData inter
 		return
 	}
 	if lark.debugger != nil {
-		lark.debugger(string(res))
+		lark.debugger("response body:", string(res))
 	}
 	var apiResp LarkApiResponse
 	err = json.Unmarshal(res, &apiResp)
@@ -184,9 +203,15 @@ func (lark *LarkApi) GetAccessToken() (err error) {
 		"/auth/v3/tenant_access_token/internal/",
 
 		// request body
-		map[string]string{
-			"app_id":     lark.appId,
-			"app_secret": lark.appSecret,
+		Protected{
+			Original: map[string]string{
+				"app_id":     lark.appId,
+				"app_secret": lark.appSecret,
+			},
+			Filtered: map[string]string{
+				"app_id":     lark.appId,
+				"app_secret": "[filtered]",
+			},
 		},
 
 		// response
