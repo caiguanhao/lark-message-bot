@@ -130,7 +130,7 @@ func (h *httpHandler) handleEventCallback(resp EventResponse) {
 			h.reply(resp.Event.ChatId, "name is needed to create a chat, specify like this:\ncreate(name)")
 			return
 		}
-		chatId, err := h.lark.api.CreateChat(args[0], resp.Event.UserOpenID)
+		chatId, err := h.lark.api.CreateChat(args[0], resp.Event.UserOpenId)
 		if err != nil {
 			log.Error(err)
 			h.reply(resp.Event.ChatId, err.Error())
@@ -139,13 +139,13 @@ func (h *httpHandler) handleEventCallback(resp EventResponse) {
 		h.reply(resp.Event.ChatId, fmt.Sprintf(`chat with name "%s" has been created, its id is %s`, args[0], chatId))
 		return
 	}
-	if funcName == "add" || funcName == "join" {
+	if funcName == "join" {
 		if len(args) == 0 || args[0] == "" {
 			h.reply(resp.Event.ChatId, "chat id is needed to join a chat, specify like this:\njoin(chat-id...)")
 			return
 		}
 		for _, chatId := range args {
-			err := h.lark.api.AddUserToChat(resp.Event.UserOpenID, chatId)
+			err := h.lark.api.AddUsersToChat(chatId, []string{resp.Event.UserOpenId})
 			if err != nil {
 				log.Error(err)
 				h.reply(resp.Event.ChatId, err.Error())
@@ -171,6 +171,58 @@ func (h *httpHandler) handleEventCallback(resp EventResponse) {
 		}
 		return
 	}
+	if funcName == "members" {
+		if len(args) == 0 || args[0] == "" {
+			h.reply(resp.Event.ChatId, "chat id is needed to list members of a chat, specify like this:\nmembers(chat-id)")
+			return
+		}
+		group, err := h.lark.api.GetChatInfo(args[0])
+		if err != nil {
+			log.Error(err)
+			h.reply(resp.Event.ChatId, err.Error())
+			return
+		}
+		userIds := []string{}
+		for _, m := range group.Members {
+			userIds = append(userIds, m.OpenId)
+		}
+		userInfos, err := h.lark.api.GetUserInfo(userIds)
+		if err != nil {
+			log.Error(err)
+			h.reply(resp.Event.ChatId, err.Error())
+			return
+		}
+		h.reply(resp.Event.ChatId, userInfos.String())
+		return
+	}
+	if funcName == "add" {
+		if len(args) < 2 || args[0] == "" {
+			h.reply(resp.Event.ChatId, "chat id is needed to add users to a chat, specify like this:\nadd(chat-id, user-id...)")
+			return
+		}
+		err := h.lark.api.AddUsersToChat(args[0], args[1:])
+		if err != nil {
+			log.Error(err)
+			h.reply(resp.Event.ChatId, err.Error())
+			return
+		}
+		h.reply(resp.Event.ChatId, "successfully added users to chat")
+		return
+	}
+	if funcName == "remove" {
+		if len(args) < 2 || args[0] == "" {
+			h.reply(resp.Event.ChatId, "chat id is needed to remove users from a chat, specify like this:\nremove(chat-id, user-id...)")
+			return
+		}
+		err := h.lark.api.RemoveUsersFromChat(args[0], args[1:])
+		if err != nil {
+			log.Error(err)
+			h.reply(resp.Event.ChatId, err.Error())
+			return
+		}
+		h.reply(resp.Event.ChatId, "successfully removed users from chat")
+		return
+	}
 	if funcName == "list" {
 		groups, err := h.lark.api.ListAllChats()
 		if err != nil {
@@ -179,6 +231,10 @@ func (h *httpHandler) handleEventCallback(resp EventResponse) {
 			return
 		}
 		h.reply(resp.Event.ChatId, groups.String())
+		return
+	}
+	if funcName == "whoami" {
+		h.reply(resp.Event.ChatId, resp.Event.OpenId)
 		return
 	}
 	if funcName == "whosyourdaddy" {

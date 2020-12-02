@@ -13,6 +13,7 @@ Steps to create Feishu bot:
    And add "Accept to messages" event.
 4. Create a new version, set availability status to all, publish it and wait
    for review.
+5. You may need to add more permissions for the `members` command.
 
 ## Commands
 
@@ -22,13 +23,29 @@ Available commands that you can send to the bot:
 
 Create new chat with name and add you to the new chat.
 
-### join(chat_id) / add(chat_id)
+### join(chat_id...)
 
-Add you to the chat with chat_id.
+Add you to one or more chats.
 
-### destroy(chat_id)
+### destroy(chat_id...)
 
-Destroy the chat with chat_id.
+Destroy one or more chats.
+
+### members(chat_id)
+
+List names and user ids of the chat with chat_id.
+
+Extra permissions for this command:
+- Access user basic information from the contact
+- Access contacts by application identity
+
+### add(chat_id, user_id...)
+
+Add one or more users to chat.
+
+### remove(chat_id, user_id...)
+
+Remove one or more users from chat.
 
 ### list
 
@@ -37,6 +54,10 @@ List all chats created by the bot.
 ### whosyourdaddy
 
 Show the author of the bot.
+
+### whoami
+
+Show your user id.
 
 ## JSON-RPC
 

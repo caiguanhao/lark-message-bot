@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -42,6 +43,11 @@ type (
 		} `json:"data"`
 	}
 
+	GroupInfoResponse struct {
+		LarkApiResponse
+		Data Group `json:"data"`
+	}
+
 	Group struct {
 		Avatar      string `json:"avatar"`
 		ChatId      string `json:"chat_id"`
@@ -49,6 +55,9 @@ type (
 		Name        string `json:"name"`
 		OwnerOpenId string `json:"owner_open_id"`
 		OwnerUserId string `json:"owner_user_id"`
+		Members     []struct {
+			OpenId string `json:"open_id"`
+		} `json:"members"`
 	}
 
 	Groups []Group
@@ -67,6 +76,20 @@ type (
 		} `json:"data"`
 	}
 
+	UserInfo struct {
+		Name   string `json:"name"`
+		OpenId string `json:"open_id"`
+	}
+
+	UserInfos []UserInfo
+
+	UserInfoResponse struct {
+		LarkApiResponse
+		Data struct {
+			UserInfos UserInfos `json:"user_infos"`
+		} `json:"data"`
+	}
+
 	EventResponse struct {
 		Type string `json:"type"`
 
@@ -79,7 +102,8 @@ type (
 			Type       string `json:"type"`
 			MsgType    string `json:"msg_type"`
 			Text       string `json:"text"`
-			UserOpenID string `json:"user_open_id"`
+			OpenId     string `json:"open_id"`
+			UserOpenId string `json:"user_open_id"`
 		} `json:"event"`
 	}
 
@@ -143,8 +167,8 @@ func (lark *LarkApi) NewRequest(path string, reqBody interface{}, respData inter
 	if err != nil {
 		return
 	}
-	if apiResp.Msg != "ok" {
-		err = fmt.Errorf("not ok returned: %s", apiResp.Msg)
+	if apiResp.Msg != "ok" && apiResp.Msg != "success" {
+		err = fmt.Errorf("not ok or success returned: %s", apiResp.Msg)
 		return
 	}
 	if respData != nil {
@@ -194,6 +218,50 @@ func (lark *LarkApi) ListAllChats() (groups Groups, err error) {
 	return
 }
 
+func (lark *LarkApi) GetChatInfo(chatId string) (group Group, err error) {
+	var data GroupInfoResponse
+	err = lark.NewRequest(
+		// path
+		"/chat/v4/info/",
+
+		// request body
+		struct {
+			ChatId string `json:"chat_id"`
+		}{chatId},
+
+		// response
+		&data,
+	)
+	if err != nil {
+		return
+	}
+	group = data.Data
+	return
+}
+
+func (lark *LarkApi) GetUserInfo(userIds []string) (userInfos UserInfos, err error) {
+	v := url.Values{}
+	for _, userId := range userIds {
+		v.Add("open_ids", userId)
+	}
+	var data UserInfoResponse
+	err = lark.NewRequest(
+		// path
+		"/contact/v1/user/batch_get",
+
+		// request body
+		v,
+
+		// response
+		&data,
+	)
+	if err != nil {
+		return
+	}
+	userInfos = data.Data.UserInfos
+	return
+}
+
 func (lark *LarkApi) CreateChat(name, userOpenId string) (chatId string, err error) {
 	var data GroupResponse
 	err = lark.NewRequest(
@@ -232,7 +300,7 @@ func (lark *LarkApi) DestroyChat(chatId string) (err error) {
 	return
 }
 
-func (lark *LarkApi) AddUserToChat(userOpenId, chatId string) (err error) {
+func (lark *LarkApi) AddUsersToChat(chatId string, userIds []string) (err error) {
 	var data GroupResponse
 	err = lark.NewRequest(
 		// path
@@ -242,7 +310,7 @@ func (lark *LarkApi) AddUserToChat(userOpenId, chatId string) (err error) {
 		struct {
 			ChatId  string   `json:"chat_id"`
 			OpenIDs []string `json:"open_ids"`
-		}{chatId, []string{userOpenId}},
+		}{chatId, userIds},
 
 		// response
 		&data,
@@ -250,6 +318,23 @@ func (lark *LarkApi) AddUserToChat(userOpenId, chatId string) (err error) {
 	if err != nil {
 		return
 	}
+	return
+}
+
+func (lark *LarkApi) RemoveUsersFromChat(chatId string, userIds []string) (err error) {
+	err = lark.NewRequest(
+		// path
+		"/chat/v4/chatter/delete/",
+
+		// request body
+		struct {
+			ChatId  string   `json:"chat_id"`
+			OpenIDs []string `json:"open_ids"`
+		}{chatId, userIds},
+
+		// response
+		nil,
+	)
 	return
 }
 
@@ -308,6 +393,23 @@ func (groups *Groups) String() string {
 		b.WriteString(group.Name)
 		b.WriteString(": ")
 		b.WriteString(group.ChatId)
+	}
+	return b.String()
+}
+
+func (userInfos *UserInfos) String() string {
+	if len(*userInfos) == 0 {
+		return "no users"
+	}
+	var b bytes.Buffer
+	for i, user := range *userInfos {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(fmt.Sprintf("%d. ", i+1))
+		b.WriteString(user.Name)
+		b.WriteString(": ")
+		b.WriteString(user.OpenId)
 	}
 	return b.String()
 }
