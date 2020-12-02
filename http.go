@@ -17,6 +17,9 @@ import (
 type (
 	httpHandler struct {
 		lark *Lark
+
+		masters     string
+		mastersList []string
 	}
 )
 
@@ -35,6 +38,20 @@ func (_h *httpHandler) init() (h *httpHandler) {
 	}
 	if h.lark.api.appSecret == "" {
 		log.Fatal("error: empty app secret")
+	}
+
+	masters := strings.Split(h.masters, ",")
+	for _, id := range masters {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		h.mastersList = append(h.mastersList, id)
+	}
+	if len(h.mastersList) > 0 {
+		log.Noticef("serving for %d users: %s", len(h.mastersList), h.mastersList)
+	} else {
+		log.Notice("serving for all users")
 	}
 
 	err := rpc.Register(h.lark)
@@ -120,11 +137,35 @@ func (h *httpHandler) handleLarkEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *httpHandler) isAllowed(userId string) bool {
+	if len(h.mastersList) == 0 {
+		return true
+	}
+	for _, id := range h.mastersList {
+		if userId == id {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *httpHandler) handleEventCallback(resp EventResponse) {
 	if resp.Event.Type != "message" || resp.Event.MsgType != "text" {
 		return
 	}
 	funcName, args := h.parseCall(resp.Event.Text)
+	if funcName == "whoami" {
+		h.reply(resp.Event.ChatId, resp.Event.OpenId)
+		return
+	}
+	if funcName == "whosyourdaddy" {
+		h.reply(resp.Event.ChatId, "CGH")
+		return
+	}
+	if !h.isAllowed(resp.Event.OpenId) {
+		h.reply(resp.Event.ChatId, "sorry, I am not allowed to work for you")
+		return
+	}
 	if funcName == "create" {
 		if len(args) == 0 || args[0] == "" {
 			h.reply(resp.Event.ChatId, "name is needed to create a chat, specify like this:\ncreate(name)")
@@ -231,14 +272,6 @@ func (h *httpHandler) handleEventCallback(resp EventResponse) {
 			return
 		}
 		h.reply(resp.Event.ChatId, groups.String())
-		return
-	}
-	if funcName == "whoami" {
-		h.reply(resp.Event.ChatId, resp.Event.OpenId)
-		return
-	}
-	if funcName == "whosyourdaddy" {
-		h.reply(resp.Event.ChatId, "CGH")
 		return
 	}
 	err := h.lark.api.SendMessage(resp.Event.ChatId, "unknown function")

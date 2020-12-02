@@ -5,6 +5,18 @@ A simple message bot for Lark (Feishu / 飞书).
 This is a small server application, you may need to configure nginx to serve
 over https and control access.
 
+## Options
+
+```
+app-id     - lark app id (you can also use env LARK_APP_ID)
+app-secret - lark app secret (you can also use env LARK_APP_SECRET)
+listen     - private http server address
+verbosity  - debug, info, notice, warning, error, critical
+masters    - user ids to work for, separated by ","
+```
+
+## Creation
+
 Steps to create Feishu bot:
 
 1. Create Custom App
