@@ -65,11 +65,17 @@ func (_h *httpHandler) init() (h *httpHandler) {
 }
 
 func (h *httpHandler) serve(address string) {
-	http.HandleFunc("/jsonrpc/", h.handleJSONRPC)
-	http.HandleFunc("/events/", h.handleLarkEvents)
-	http.HandleFunc("/", h.handle404)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/jsonrpc/", h.handleJSONRPC)
+	mux.HandleFunc("/events/", h.handleLarkEvents)
+	mux.HandleFunc("/204/", h.handle204)
+	mux.HandleFunc("/", h.handle404)
+	server := &http.Server{
+		Addr:    address,
+		Handler: h.logRequest(mux),
+	}
 	log.Info("listening", address)
-	log.Fatal(http.ListenAndServe(address, nil))
+	log.Fatal(server.ListenAndServe())
 }
 
 func (h *httpHandler) updateAccessToken() {
@@ -135,18 +141,6 @@ func (h *httpHandler) handleLarkEvents(w http.ResponseWriter, r *http.Request) {
 		h.handleEventCallback(resp)
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *httpHandler) isAllowed(userId string) bool {
-	if len(h.mastersList) == 0 {
-		return true
-	}
-	for _, id := range h.mastersList {
-		if userId == id {
-			return true
-		}
-	}
-	return false
 }
 
 func (h *httpHandler) handleEventCallback(resp EventResponse) {
@@ -280,8 +274,19 @@ func (h *httpHandler) handleEventCallback(resp EventResponse) {
 	}
 }
 
+func (h *httpHandler) handle204(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *httpHandler) handle404(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
+}
+
+func (h *httpHandler) logRequest(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Debug(r.Method, r.URL)
+		handler.ServeHTTP(w, r)
+	})
 }
 
 func (h *httpHandler) parseCall(input string) (funcName string, args []string) {
@@ -313,4 +318,16 @@ func (h *httpHandler) reply(chatId, message string) {
 	if err != nil {
 		log.Error(err)
 	}
+}
+
+func (h *httpHandler) isAllowed(userId string) bool {
+	if len(h.mastersList) == 0 {
+		return true
+	}
+	for _, id := range h.mastersList {
+		if userId == id {
+			return true
+		}
+	}
+	return false
 }
