@@ -3,14 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"time"
-)
-
-var (
-	errLarkApiNotOK = errors.New("not ok returned")
 )
 
 const (
@@ -46,6 +42,24 @@ type (
 		} `json:"data"`
 	}
 
+	Group struct {
+		Avatar      string `json:"avatar"`
+		ChatId      string `json:"chat_id"`
+		Description string `json:"description"`
+		Name        string `json:"name"`
+		OwnerOpenId string `json:"owner_open_id"`
+		OwnerUserId string `json:"owner_user_id"`
+	}
+
+	Groups []Group
+
+	GroupsResponse struct {
+		LarkApiResponse
+		Data struct {
+			Groups Groups `json:"groups"`
+		} `json:"data"`
+	}
+
 	MessageResponse struct {
 		LarkApiResponse
 		Data struct {
@@ -61,6 +75,7 @@ type (
 
 		// type == "event_callback"
 		Event struct {
+			ChatId     string `json:"open_chat_id"`
 			Type       string `json:"type"`
 			MsgType    string `json:"msg_type"`
 			Text       string `json:"text"`
@@ -129,10 +144,12 @@ func (lark *LarkApi) NewRequest(path string, reqBody interface{}, respData inter
 		return
 	}
 	if apiResp.Msg != "ok" {
-		err = errLarkApiNotOK
+		err = fmt.Errorf("not ok returned: %s", apiResp.Msg)
 		return
 	}
-	err = json.Unmarshal(res, respData)
+	if respData != nil {
+		err = json.Unmarshal(res, respData)
+	}
 	return
 }
 
@@ -159,7 +176,25 @@ func (lark *LarkApi) GetAccessToken() (err error) {
 	return
 }
 
-func (lark *LarkApi) CreateGroup(userOpenId string) (chatId string, err error) {
+func (lark *LarkApi) ListAllChats() (groups Groups, err error) {
+	var data GroupsResponse
+	err = lark.NewRequest(
+		// path
+		"/chat/v4/list/",
+
+		// request body
+		struct {
+			PageSize string `json:"page_size"`
+		}{"200"},
+
+		// response
+		&data,
+	)
+	groups = data.Data.Groups
+	return
+}
+
+func (lark *LarkApi) CreateChat(name, userOpenId string) (chatId string, err error) {
 	var data GroupResponse
 	err = lark.NewRequest(
 		// path
@@ -169,7 +204,7 @@ func (lark *LarkApi) CreateGroup(userOpenId string) (chatId string, err error) {
 		struct {
 			Name    string   `json:"name"`
 			OpenIds []string `json:"open_ids"`
-		}{"Messages", []string{userOpenId}},
+		}{name, []string{userOpenId}},
 
 		// response
 		&data,
@@ -178,6 +213,22 @@ func (lark *LarkApi) CreateGroup(userOpenId string) (chatId string, err error) {
 		return
 	}
 	chatId = data.Data.ChatId
+	return
+}
+
+func (lark *LarkApi) DestroyChat(chatId string) (err error) {
+	err = lark.NewRequest(
+		// path
+		"/chat/v4/disband/",
+
+		// request body
+		struct {
+			ChatId string `json:"chat_id"`
+		}{chatId},
+
+		// response
+		nil,
+	)
 	return
 }
 
@@ -242,4 +293,21 @@ func (lark *LarkApi) SendPost(chatId string, post Post) (err error) {
 		&data,
 	)
 	return
+}
+
+func (groups *Groups) String() string {
+	if len(*groups) == 0 {
+		return "no groups"
+	}
+	var b bytes.Buffer
+	for i, group := range *groups {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(fmt.Sprintf("%d. ", i+1))
+		b.WriteString(group.Name)
+		b.WriteString(": ")
+		b.WriteString(group.ChatId)
+	}
+	return b.String()
 }

@@ -17,8 +17,6 @@ import (
 type (
 	httpHandler struct {
 		lark *Lark
-
-		chatIdFile string
 	}
 )
 
@@ -46,14 +44,6 @@ func (_h *httpHandler) init() (h *httpHandler) {
 
 	go h.updateAccessToken()
 
-	chatId, err := ioutil.ReadFile(h.chatIdFile)
-	if err == nil {
-		h.lark.chatId = strings.TrimSpace(string(chatId))
-		log.Notice("using chat id", h.lark.chatId)
-	}
-	if h.lark.chatId == "" {
-		log.Notice("no chat id: will be created in the future")
-	}
 	return
 }
 
@@ -125,27 +115,113 @@ func (h *httpHandler) handleLarkEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "event_callback":
-		if resp.Event.Type == "message" && resp.Event.MsgType == "text" && resp.Event.Text == "+" {
-			if h.lark.chatId == "" {
-				chatId, err := h.lark.api.CreateGroup(resp.Event.UserOpenID)
-				if err == nil {
-					h.lark.chatId = chatId
-					err = ioutil.WriteFile(h.chatIdFile, []byte(h.lark.chatId), 0644)
-					if err != nil {
-						log.Error(err)
-					}
-				} else {
-					log.Error(err)
-				}
-
-			} else {
-				h.lark.api.AddUserToChat(resp.Event.UserOpenID, h.lark.chatId)
-			}
-		}
+		h.handleEventCallback(resp)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *httpHandler) handleEventCallback(resp EventResponse) {
+	if resp.Event.Type != "message" || resp.Event.MsgType != "text" {
+		return
+	}
+	funcName, args := h.parseCall(resp.Event.Text)
+	if funcName == "create" {
+		if len(args) == 0 || args[0] == "" {
+			h.reply(resp.Event.ChatId, "name is needed to create a chat, specify like this:\ncreate(name)")
+			return
+		}
+		chatId, err := h.lark.api.CreateChat(args[0], resp.Event.UserOpenID)
+		if err != nil {
+			log.Error(err)
+			h.reply(resp.Event.ChatId, err.Error())
+			return
+		}
+		h.reply(resp.Event.ChatId, fmt.Sprintf(`chat with name "%s" has been created, its id is %s`, args[0], chatId))
+		return
+	}
+	if funcName == "add" || funcName == "join" {
+		if len(args) == 0 || args[0] == "" {
+			h.reply(resp.Event.ChatId, "chat id is needed to join a chat, specify like this:\njoin(chat-id...)")
+			return
+		}
+		for _, chatId := range args {
+			err := h.lark.api.AddUserToChat(resp.Event.UserOpenID, chatId)
+			if err != nil {
+				log.Error(err)
+				h.reply(resp.Event.ChatId, err.Error())
+				return
+			}
+			h.reply(resp.Event.ChatId, fmt.Sprintf("successfully joined chat: %s", chatId))
+		}
+		return
+	}
+	if funcName == "destroy" {
+		if len(args) == 0 || args[0] == "" {
+			h.reply(resp.Event.ChatId, "chat id is needed to destroy a chat, specify like this:\ndestroy(chat-id...)")
+			return
+		}
+		for _, chatId := range args {
+			err := h.lark.api.DestroyChat(chatId)
+			if err != nil {
+				log.Error(err)
+				h.reply(resp.Event.ChatId, err.Error())
+				return
+			}
+			h.reply(resp.Event.ChatId, fmt.Sprintf("successfully destroyed chat: %s", chatId))
+		}
+		return
+	}
+	if funcName == "list" {
+		groups, err := h.lark.api.ListAllChats()
+		if err != nil {
+			log.Error(err)
+			h.reply(resp.Event.ChatId, err.Error())
+			return
+		}
+		h.reply(resp.Event.ChatId, groups.String())
+		return
+	}
+	if funcName == "whosyourdaddy" {
+		h.reply(resp.Event.ChatId, "CGH")
+		return
+	}
+	err := h.lark.api.SendMessage(resp.Event.ChatId, "unknown function")
+	if err != nil {
+		log.Error(err)
+	}
+}
+
 func (h *httpHandler) handle404(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
+}
+
+func (h *httpHandler) parseCall(input string) (funcName string, args []string) {
+	input = strings.TrimSpace(input)
+	if len(input) < 1 {
+		return
+	}
+	start := strings.Index(input, "(")
+	if start == -1 {
+		funcName = input
+		return
+	}
+	funcName = strings.TrimSpace(input[0:start])
+	if input[len(input)-1] != ')' {
+		return
+	}
+	args = strings.Split(input[start+1:len(input)-1], ",")
+	for i := range args {
+		args[i] = strings.TrimSpace(args[i])
+	}
+	if len(args) == 1 && args[0] == "" {
+		args = []string{}
+	}
+	return
+}
+
+func (h *httpHandler) reply(chatId, message string) {
+	err := h.lark.api.SendMessage(chatId, message)
+	if err != nil {
+		log.Error(err)
+	}
 }
