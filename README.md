@@ -126,3 +126,32 @@ See [docs](https://open.feishu.cn/document/ukTMukTMukTM/uMDMxEjLzATMx4yMwETM).
   }
 }
 ```
+
+## nginx
+
+nginx config example:
+
+```
+server {
+	listen 443 ssl http2;
+	server_name lark.yourdomain.com;
+	location /204/ {
+		proxy_pass http://127.0.0.1:32123;
+	}
+	location /events/ {
+		proxy_pass http://127.0.0.1:32123;
+	}
+	location /jsonrpc/ {
+		satisfy any;
+		allow 8.9.10.11;   # ip addresses of your other servers
+		allow 12.13.14.15; # ip addresses of your other servers
+		deny all;
+		auth_basic "closed site";
+		auth_basic_user_file /etc/nginx/lark.passwd;
+		proxy_pass http://127.0.0.1:32123;
+	}
+	location / {
+		return 404;
+	}
+}
+```
