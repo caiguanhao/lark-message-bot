@@ -2,7 +2,7 @@
 
 A simple message bot for Lark (Feishu / 飞书).
 
-This is a small server application, you may need to configure nginx to serve
+This is a small server application, you may need to configure [nginx](#nginx) to serve
 over https and control access.
 
 ## Options
@@ -131,7 +131,7 @@ See [docs](https://open.feishu.cn/document/ukTMukTMukTM/uMDMxEjLzATMx4yMwETM).
 
 nginx config example:
 
-```
+```nginx
 server {
 	listen 443 ssl http2;
 	server_name lark.yourdomain.com;
