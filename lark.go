@@ -1,10 +1,14 @@
 package main
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/caiguanhao/lark-slim"
+)
 
 type (
 	Lark struct {
-		api *LarkApi
+		api *lark.API
 	}
 
 	SendMessageArgs struct {
@@ -13,8 +17,8 @@ type (
 	}
 
 	SendPostArgs struct {
-		ChatId string `json:"chat_id"`
-		Post   Post   `json:"post"`
+		ChatId string    `json:"chat_id"`
+		Post   lark.Post `json:"post"`
 	}
 )
 

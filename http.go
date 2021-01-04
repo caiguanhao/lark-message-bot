@@ -12,6 +12,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/caiguanhao/lark-slim"
 )
 
 type (
@@ -26,17 +28,17 @@ type (
 func (_h *httpHandler) init() (h *httpHandler) {
 	h = _h
 
-	if h.lark.api.appId == "" {
-		h.lark.api.appId = os.Getenv("LARK_APP_ID")
+	if h.lark.api.AppId == "" {
+		h.lark.api.AppId = os.Getenv("LARK_APP_ID")
 	}
-	if h.lark.api.appId == "" {
+	if h.lark.api.AppId == "" {
 		log.Fatal("error: empty app id")
 	}
 
-	if h.lark.api.appSecret == "" {
-		h.lark.api.appSecret = os.Getenv("LARK_APP_SECRET")
+	if h.lark.api.AppSecret == "" {
+		h.lark.api.AppSecret = os.Getenv("LARK_APP_SECRET")
 	}
-	if h.lark.api.appSecret == "" {
+	if h.lark.api.AppSecret == "" {
 		log.Fatal("error: empty app secret")
 	}
 
@@ -83,12 +85,16 @@ func (h *httpHandler) updateAccessToken() {
 		time.Sleep(5 * time.Second)
 		h.updateAccessToken()
 	}()
-	h.lark.api.GetAccessToken()
-	secs := h.lark.api.accessTokenExpire - 60
+	expire, err := h.lark.api.GetAccessToken()
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	secs := expire - 60
 	if secs < 5 {
 		secs = 5
 	}
-	log.Info("access token has changed to", h.lark.api.accessToken, "next in", secs, "seconds")
+	log.Info("update access token in", secs, "seconds")
 	time.Sleep(time.Duration(secs) * time.Second)
 }
 
@@ -123,7 +129,7 @@ func (h *httpHandler) handleLarkEvents(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	var resp EventResponse
+	var resp lark.EventResponse
 	if json.Unmarshal(body, &resp) != nil {
 		return
 	}
@@ -143,7 +149,7 @@ func (h *httpHandler) handleLarkEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *httpHandler) handleEventCallback(resp EventResponse) {
+func (h *httpHandler) handleEventCallback(resp lark.EventResponse) {
 	if resp.Event.Type != "message" || resp.Event.MsgType != "text" {
 		return
 	}

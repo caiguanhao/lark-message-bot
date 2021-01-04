@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+
+	"github.com/caiguanhao/lark-slim"
 )
 
 func main() {
@@ -16,10 +18,10 @@ func main() {
 
 	h := &httpHandler{
 		lark: &Lark{
-			api: &LarkApi{
-				appId:     *appId,
-				appSecret: *appSecret,
-				debugger:  log.Debug,
+			api: &lark.API{
+				AppId:     *appId,
+				AppSecret: *appSecret,
+				Debugger:  log.Debug,
 			},
 		},
 		masters: *masters,
