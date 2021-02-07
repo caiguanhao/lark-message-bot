@@ -153,7 +153,11 @@ func (h *httpHandler) handleEventCallback(resp lark.EventResponse) {
 	if resp.Event.Type != "message" || resp.Event.MsgType != "text" {
 		return
 	}
-	funcName, args := h.parseCall(resp.Event.Text)
+	text := strings.TrimSpace(resp.Event.TextWithoutAtBot)
+	if text == "" {
+		text = strings.TrimSpace(resp.Event.Text)
+	}
+	funcName, args := h.parseCall(text)
 	if funcName == "whoami" {
 		h.reply(resp.Event.ChatId, resp.Event.OpenId)
 		return
