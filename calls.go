@@ -259,5 +259,6 @@ func getMethods(c interface{}) string {
 		str += strings.Join(args, ", ") + ")"
 		help = append(help, str)
 	}
+	help = append(help, "For more info, visit github.com/caiguanhao/lark-message-bot")
 	return strings.Join(help, "\n")
 }
