@@ -19,6 +19,10 @@ type (
 	MastersCall struct {
 		Call
 	}
+
+	ChatName string
+	ChatId   string
+	UserId   string
 )
 
 func (c Call) WhoAmI() string {
@@ -34,25 +38,33 @@ func (c Call) WhosYourDaddy() string {
 	return userInfos.String()
 }
 
-func (c MastersCall) Create(names ...string) string {
-	if len(names) == 0 || names[0] == "" {
+func (c Call) Help() string {
+	return getMethods(c)
+}
+
+func (c MastersCall) Help() string {
+	return getMethods(c)
+}
+
+func (c MastersCall) Create(name ChatName) string {
+	if name == "" {
 		return "name is needed to create a chat, specify like this:\ncreate(name)"
 	}
-	chatId, err := c.http.lark.api.CreateChat(names[0], c.resp.Event.UserOpenId)
+	chatId, err := c.http.lark.api.CreateChat(string(name), c.resp.Event.UserOpenId)
 	if err != nil {
 		log.Error(err)
 		return err.Error()
 	}
-	return fmt.Sprintf(`chat with name "%s" has been created, its id is %s`, names[0], chatId)
+	return fmt.Sprintf(`chat with name "%s" has been created, its id is %s`, name, chatId)
 }
 
-func (c MastersCall) Join(chatIds ...string) string {
+func (c MastersCall) Join(chatIds ...ChatId) string {
 	if len(chatIds) == 0 || chatIds[0] == "" {
 		return "chat id is needed to join a chat, specify like this:\njoin(chat-id...)"
 	}
 	ret := []string{}
 	for _, chatId := range chatIds {
-		err := c.http.lark.api.AddUsersToChat(chatId, []string{c.resp.Event.UserOpenId})
+		err := c.http.lark.api.AddUsersToChat(string(chatId), []string{c.resp.Event.UserOpenId})
 		if err != nil {
 			log.Error(err)
 			ret = append(ret, err.Error())
@@ -63,13 +75,13 @@ func (c MastersCall) Join(chatIds ...string) string {
 	return strings.Join(ret, "\n")
 }
 
-func (c MastersCall) Destroy(chatIds ...string) string {
+func (c MastersCall) Destroy(chatIds ...ChatId) string {
 	if len(chatIds) == 0 || chatIds[0] == "" {
 		return "chat id is needed to destroy a chat, specify like this:\ndestroy(chat-id...)"
 	}
 	ret := []string{}
 	for _, chatId := range chatIds {
-		err := c.http.lark.api.DestroyChat(chatId)
+		err := c.http.lark.api.DestroyChat(string(chatId))
 		if err != nil {
 			log.Error(err)
 			ret = append(ret, err.Error())
@@ -80,11 +92,11 @@ func (c MastersCall) Destroy(chatIds ...string) string {
 	return strings.Join(ret, "\n")
 }
 
-func (c MastersCall) Members(chatIds ...string) string {
-	if len(chatIds) == 0 || chatIds[0] == "" {
+func (c MastersCall) Members(chatId ChatId) string {
+	if chatId == "" {
 		return "chat id is needed to list members of a chat, specify like this:\nmembers(chat-id)"
 	}
-	group, err := c.http.lark.api.GetChatInfo(chatIds[0])
+	group, err := c.http.lark.api.GetChatInfo(string(chatId))
 	if err != nil {
 		log.Error(err)
 		return err.Error()
@@ -101,11 +113,15 @@ func (c MastersCall) Members(chatIds ...string) string {
 	return userInfos.String()
 }
 
-func (c MastersCall) Add(ids ...string) string {
-	if len(ids) < 2 || ids[0] == "" {
+func (c MastersCall) Add(chatId ChatId, userIds ...UserId) string {
+	if chatId == "" || len(userIds) == 0 {
 		return "chat id is needed to add users to a chat, specify like this:\nadd(chat-id, user-id...)"
 	}
-	err := c.http.lark.api.AddUsersToChat(ids[0], ids[1:])
+	var userIdStrs []string
+	for _, userId := range userIds {
+		userIdStrs = append(userIdStrs, string(userId))
+	}
+	err := c.http.lark.api.AddUsersToChat(string(chatId), userIdStrs)
 	if err != nil {
 		log.Error(err)
 		return err.Error()
@@ -113,11 +129,15 @@ func (c MastersCall) Add(ids ...string) string {
 	return "successfully added users to chat"
 }
 
-func (c MastersCall) Remove(ids ...string) string {
-	if len(ids) < 2 || ids[0] == "" {
+func (c MastersCall) Remove(chatId ChatId, userIds ...UserId) string {
+	if chatId == "" || len(userIds) == 0 {
 		return "chat id is needed to remove users from a chat, specify like this:\nremove(chat-id, user-id...)"
 	}
-	err := c.http.lark.api.RemoveUsersFromChat(ids[0], ids[1:])
+	var userIdStrs []string
+	for _, userId := range userIds {
+		userIdStrs = append(userIdStrs, string(userId))
+	}
+	err := c.http.lark.api.RemoveUsersFromChat(string(chatId), userIdStrs)
 	if err != nil {
 		log.Error(err)
 		return err.Error()
@@ -166,15 +186,9 @@ func call(obj interface{}, expression string) string {
 
 	rt := reflect.TypeOf(obj)
 	methodNames := map[string]string{}
-	methods := []string{}
 	for i := 0; i < rt.NumMethod(); i++ {
 		m := rt.Method(i)
 		methodNames[strings.ToLower(m.Name)] = m.Name
-		methods = append(methods, m.Name)
-	}
-
-	if method == "help" {
-		return strings.Join(methods, "\n")
 	}
 
 	rv := reflect.ValueOf(obj)
@@ -184,26 +198,66 @@ func call(obj interface{}, expression string) string {
 	}
 	mT := m.Type()
 
-	argsv := []reflect.Value{}
 	if mT.IsVariadic() {
+		if len(args) < mT.NumIn()-1 {
+			return callTooFewArguments
+		}
+
+		argsv := []reflect.Value{}
 		i := 0
 		for ; i < mT.NumIn()-1; i++ {
-			argsv = append(argsv, reflect.ValueOf(args[i]))
+			v := reflect.New(mT.In(i)).Elem()
+			v.SetString(args[i])
+			argsv = append(argsv, v)
 		}
-		argsv = append(argsv, reflect.ValueOf(args[i:]))
-	} else {
-		for i := range args {
-			argsv = append(argsv, reflect.ValueOf(args[i]))
+		vt := mT.In(i)
+		argsv2 := reflect.New(vt).Elem()
+		for ; i < len(args); i++ {
+			v := reflect.New(vt.Elem()).Elem()
+			v.SetString(args[i])
+			argsv2 = reflect.Append(argsv2, v)
 		}
+		argsv = append(argsv, argsv2)
+		return m.CallSlice(argsv)[0].String()
 	}
-	if len(argsv) < mT.NumIn() {
+
+	if len(args) < mT.NumIn() {
 		return callTooFewArguments
-	} else if len(argsv) > mT.NumIn() {
+	} else if len(args) > mT.NumIn() {
 		return callTooManyArguments
 	}
-	if mT.IsVariadic() {
-		return m.CallSlice(argsv)[0].String()
-	} else {
-		return m.Call(argsv)[0].String()
+
+	argsv := []reflect.Value{}
+	for i := range args {
+		v := reflect.New(mT.In(i)).Elem()
+		v.SetString(args[i])
+		argsv = append(argsv, v)
 	}
+	return m.Call(argsv)[0].String()
+}
+
+func getMethods(c interface{}) string {
+	var help []string
+	rt := reflect.TypeOf(c)
+	for i := 0; i < rt.NumMethod(); i++ {
+		method := rt.Method(i)
+		str := method.Name + "("
+		mt := method.Type
+		var args []string
+		for j := 1; j < mt.NumIn(); j++ {
+			name := mt.In(j).Name()
+			if mt.In(j).Kind() == reflect.Slice {
+				name = mt.In(j).Elem().Name()
+				if mt.IsVariadic() && j == mt.NumIn()-1 {
+					name += "..."
+				} else {
+					name += "[]"
+				}
+			}
+			args = append(args, name)
+		}
+		str += strings.Join(args, ", ") + ")"
+		help = append(help, str)
+	}
+	return strings.Join(help, "\n")
 }

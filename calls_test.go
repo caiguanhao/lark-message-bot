@@ -7,17 +7,27 @@ import (
 
 type (
 	test struct{}
+
+	FId  string
+	F2Id string
 )
 
-func (t test) A() string                      { return "A" }
-func (t test) B(a string) string              { return "B" + a }
-func (t test) C(a, b string) string           { return "C" + a + b }
-func (t test) D(a, b, c string) string        { return "D" + a + b + c }
-func (t test) E(a ...string) string           { return "E" + strings.Join(a, ",") }
-func (t test) F(a string, b ...string) string { return "F" + a + "/" + strings.Join(b, ",") }
+func (t test) A() string               { return "A" }
+func (t test) B(a string) string       { return "B" + a }
+func (t test) C(a, b string) string    { return "C" + a + b }
+func (t test) D(a, b, c string) string { return "D" + a + b + c }
+func (t test) E(a ...string) string    { return "E" + strings.Join(a, ",") }
+func (t test) F(a FId, _b ...F2Id) string {
+	var b []string
+	for i := range _b {
+		b = append(b, string(_b[i]))
+	}
+	return "F" + string(a) + "/" + strings.Join(b, ",")
+}
 func (t test) G(a, b string, c ...string) string {
 	return "G" + a + "/" + b + "/" + strings.Join(c, ",")
 }
+func (t test) Help() string { return getMethods(t) }
 
 func Test_call(t *testing.T) {
 	o := test{}
@@ -45,10 +55,17 @@ func Test_call(t *testing.T) {
 		{"e()", "E"},
 		{"e(a)", "Ea"},
 		{"e(a, bc, d)", "Ea,bc,d"},
+		{"f()", callTooFewArguments},
 		{"f(a, bc, d)", "Fa/bc,d"},
+		{"g(a)", callTooFewArguments},
 		{"g(a, bc, d)", "Ga/bc/d"},
 		{"g(a, bc, d, 12, 34)", "Ga/bc/d,12,34"},
-		{"help", strings.Join([]string{"A", "B", "C", "D", "E", "F", "G"}, "\n")},
+		{"help", strings.Join([]string{
+			"A()", "B(string)", "C(string, string)",
+			"D(string, string, string)", "E(string...)",
+			"F(FId, F2Id...)", "G(string, string, string...)",
+			"Help()",
+		}, "\n")},
 	}
 	for _, c := range cases {
 		val := call(o, c[0])
