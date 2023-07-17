@@ -7,12 +7,12 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/caiguanhao/lark-slim"
+	"github.com/caiguanhao/larkslim"
 )
 
 type (
 	Call struct {
-		resp lark.EventResponse
+		resp larkslim.EventResponse
 		http *httpHandler
 	}
 
@@ -30,12 +30,17 @@ func (c Call) WhoAmI() string {
 }
 
 func (c Call) WhosYourDaddy() string {
-	userInfos, err := c.http.lark.api.GetUserInfo(c.http.mastersList)
-	if err != nil {
-		log.Error(err)
-		return err.Error()
+	var out []string
+	for _, m := range c.http.mastersList {
+		info, err := c.http.lark.api.GetUserInfo(m)
+		if err == nil {
+			out = append(out, fmt.Sprintf("%s (%s)", info.Name, info.OpenId))
+		} else {
+			log.Error(err)
+			out = append(out, err.Error())
+		}
 	}
-	return userInfos.String()
+	return strings.Join(out, "\n")
 }
 
 func (c Call) Help() string {
@@ -92,6 +97,20 @@ func (c MastersCall) Destroy(chatIds ...ChatId) string {
 	return strings.Join(ret, "\n")
 }
 
+func (c MastersCall) ChangeOwner(chatId ChatId, ownerId UserId) string {
+	if chatId == "" || ownerId == "" {
+		return "chat id or owner id is needed to change owner of a chat, specify like this:\nchangeowner(chat-id, user-id)"
+	}
+	err := c.http.lark.api.UpdateChat(string(chatId), map[string]interface{}{
+		"owner_open_id": string(ownerId),
+	})
+	if err != nil {
+		log.Error(err)
+		return err.Error()
+	}
+	return "successfully changed owner of chat"
+}
+
 func (c MastersCall) Members(chatId ChatId) string {
 	if chatId == "" {
 		return "chat id is needed to list members of a chat, specify like this:\nmembers(chat-id)"
@@ -105,12 +124,17 @@ func (c MastersCall) Members(chatId ChatId) string {
 	for _, m := range group.Members {
 		userIds = append(userIds, m.OpenId)
 	}
-	userInfos, err := c.http.lark.api.GetUserInfo(userIds)
-	if err != nil {
-		log.Error(err)
-		return err.Error()
+	var out []string
+	for _, user := range userIds {
+		info, err := c.http.lark.api.GetUserInfo(user)
+		if err == nil {
+			out = append(out, fmt.Sprintf("%s (%s)", info.Name, info.OpenId))
+		} else {
+			log.Error(err)
+			out = append(out, err.Error())
+		}
 	}
-	return userInfos.String()
+	return strings.Join(out, "\n")
 }
 
 func (c MastersCall) Add(chatId ChatId, userIds ...UserId) string {

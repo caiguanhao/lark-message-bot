@@ -11,9 +11,8 @@ import (
 	"net/rpc/jsonrpc"
 	"os"
 	"strings"
-	"time"
 
-	"github.com/caiguanhao/lark-slim"
+	"github.com/caiguanhao/larkslim"
 )
 
 type (
@@ -61,8 +60,6 @@ func (_h *httpHandler) init() (h *httpHandler) {
 		log.Fatal("json-rpc error:", err)
 	}
 
-	go h.updateAccessToken()
-
 	return
 }
 
@@ -78,24 +75,6 @@ func (h *httpHandler) serve(address string) {
 	}
 	log.Info("listening", address)
 	log.Fatal(server.ListenAndServe())
-}
-
-func (h *httpHandler) updateAccessToken() {
-	defer func() {
-		time.Sleep(5 * time.Second)
-		h.updateAccessToken()
-	}()
-	expire, err := h.lark.api.GetAccessToken()
-	if err != nil {
-		log.Error(err)
-		return
-	}
-	secs := expire - 60
-	if secs < 5 {
-		secs = 5
-	}
-	log.Info("update access token in", secs, "seconds")
-	time.Sleep(time.Duration(secs) * time.Second)
 }
 
 func (h *httpHandler) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +108,7 @@ func (h *httpHandler) handleLarkEvents(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	var resp lark.EventResponse
+	var resp larkslim.EventResponse
 	if json.Unmarshal(body, &resp) != nil {
 		return
 	}
@@ -149,7 +128,7 @@ func (h *httpHandler) handleLarkEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *httpHandler) handleEventCallback(resp lark.EventResponse) {
+func (h *httpHandler) handleEventCallback(resp larkslim.EventResponse) {
 	if resp.Event.Type != "message" || resp.Event.MsgType != "text" {
 		return
 	}

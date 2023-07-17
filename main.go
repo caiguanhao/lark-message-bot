@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 
-	"github.com/caiguanhao/lark-slim"
+	"github.com/caiguanhao/larkslim"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 
 	h := &httpHandler{
 		lark: &Lark{
-			api: &lark.API{
+			api: &larkslim.API{
 				AppId:     *appId,
 				AppSecret: *appSecret,
 				Debugger:  log.Debug,
