@@ -22,7 +22,12 @@ Steps to create Feishu bot:
 1. Create Custom App
 2. Go to Features, enable "Using Bot"
 3. Go to Event Subscriptions page, set Request URL to this server address.
-   And add "Accept to messages" event.
+   Add "Receive message v2.0" (im.message.receive_v1) event with these
+   permissions:
+   - im:message.p2p_msg:readonly (read direct messages sent to the bot)
+   - im:message.group_at_msg:readonly (receive group messages that @ the bot)
+   - im:message.group_msg (if you want to receive all group messages)
+   Do NOT set an Encrypt Key, encrypted events are not supported.
 4. Create a new version, set availability status to all, publish it and wait
    for review.
 5. You may need to add more permissions for the `members` command.

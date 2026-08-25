@@ -11,6 +11,8 @@ import (
 	"net/rpc/jsonrpc"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/caiguanhao/larkslim"
 )
@@ -21,6 +23,9 @@ type (
 
 		masters     string
 		mastersList []string
+
+		seenMutex    sync.Mutex
+		seenMessages map[string]time.Time
 	}
 )
 
@@ -59,6 +64,8 @@ func (_h *httpHandler) init() (h *httpHandler) {
 	if err != nil {
 		log.Fatal("json-rpc error:", err)
 	}
+
+	h.seenMessages = map[string]time.Time{}
 
 	return
 }
@@ -108,52 +115,93 @@ func (h *httpHandler) handleLarkEvents(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	var resp larkslim.EventResponse
-	if json.Unmarshal(body, &resp) != nil {
-		return
-	}
 	log.Debug(string(body))
-	switch resp.Type {
-	case "url_verification":
+	var verification struct {
+		Type      string `json:"type"`
+		Challenge string `json:"challenge"`
+	}
+	if json.Unmarshal(body, &verification) == nil &&
+		verification.Type == "url_verification" {
 		if data, err := json.Marshal(map[string]string{
-			"challenge": resp.Challenge,
+			"challenge": verification.Challenge,
 		}); err == nil {
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, string(data))
 			return
 		}
-	case "event_callback":
-		h.handleEventCallback(resp)
 	}
+	var event larkslim.MessageReceiveEvent
+	if json.Unmarshal(body, &event) != nil ||
+		event.Header.EventType != "im.message.receive_v1" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	// feishu re-pushes the event if the callback is not acknowledged in
+	// time, so respond first and handle the message asynchronously
+	if h.isDuplicate(event.Event.Message.MessageId) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	go h.handleMessageReceive(event)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *httpHandler) handleEventCallback(resp larkslim.EventResponse) {
-	if resp.Event.Type != "message" || resp.Event.MsgType != "text" {
+func (h *httpHandler) handleMessageReceive(event larkslim.MessageReceiveEvent) {
+	// ignore messages sent by bots (including itself) to avoid loops
+	if event.Event.Sender.SenderType != "user" {
 		return
 	}
-	input := strings.TrimSpace(resp.Event.TextWithoutAtBot)
+	if event.Event.Message.MessageType != "text" {
+		return
+	}
+	input := strings.TrimSpace(event.TextWithoutMentions())
 	if input == "" {
-		input = strings.TrimSpace(resp.Event.Text)
+		input = strings.TrimSpace(event.Text())
+	}
+	if input == "" {
+		return
 	}
 
-	if h.isMaster(resp.Event.OpenId) {
-		h.reply(resp.Event.ChatId, call(MastersCall{
+	senderOpenId := event.Event.Sender.SenderId.OpenId
+	chatId := event.Event.Message.ChatId
+	if h.isMaster(senderOpenId) {
+		h.reply(chatId, call(MastersCall{
 			Call{
-				resp: resp,
-				http: h,
+				senderOpenId: senderOpenId,
+				http:         h,
 			},
 		}, input))
 	} else {
-		h.reply(resp.Event.ChatId, call(Call{
-			resp: resp,
-			http: h,
+		h.reply(chatId, call(Call{
+			senderOpenId: senderOpenId,
+			http:         h,
 		}, input))
 	}
 }
 
 func (h *httpHandler) handle204(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// isDuplicate records message id and reports whether it has been seen
+// before. Feishu re-pushes an event if the callback is not acknowledged
+// fast enough, so the same message may be delivered more than once.
+func (h *httpHandler) isDuplicate(messageId string) bool {
+	if messageId == "" {
+		return false
+	}
+	h.seenMutex.Lock()
+	defer h.seenMutex.Unlock()
+	if _, ok := h.seenMessages[messageId]; ok {
+		return true
+	}
+	h.seenMessages[messageId] = time.Now()
+	for id, t := range h.seenMessages {
+		if time.Since(t) > 10*time.Minute {
+			delete(h.seenMessages, id)
+		}
+	}
+	return false
 }
 
 func (h *httpHandler) handle404(w http.ResponseWriter, r *http.Request) {

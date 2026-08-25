@@ -6,14 +6,12 @@ import (
 	"go/parser"
 	"reflect"
 	"strings"
-
-	"github.com/caiguanhao/larkslim"
 )
 
 type (
 	Call struct {
-		resp larkslim.EventResponse
-		http *httpHandler
+		senderOpenId string
+		http         *httpHandler
 	}
 
 	MastersCall struct {
@@ -26,7 +24,7 @@ type (
 )
 
 func (c Call) WhoAmI() string {
-	return c.resp.Event.OpenId
+	return c.senderOpenId
 }
 
 func (c Call) WhosYourDaddy() string {
@@ -55,7 +53,7 @@ func (c MastersCall) Create(name ChatName) string {
 	if name == "" {
 		return "name is needed to create a chat, specify like this:\ncreate(name)"
 	}
-	chatId, err := c.http.lark.api.CreateChat(string(name), c.resp.Event.UserOpenId)
+	chatId, err := c.http.lark.api.CreateChat(string(name), c.senderOpenId)
 	if err != nil {
 		log.Error(err)
 		return err.Error()
@@ -69,7 +67,7 @@ func (c MastersCall) Join(chatIds ...ChatId) string {
 	}
 	ret := []string{}
 	for _, chatId := range chatIds {
-		err := c.http.lark.api.AddUsersToChat(string(chatId), []string{c.resp.Event.UserOpenId})
+		err := c.http.lark.api.AddUsersToChat(string(chatId), []string{c.senderOpenId})
 		if err != nil {
 			log.Error(err)
 			ret = append(ret, err.Error())

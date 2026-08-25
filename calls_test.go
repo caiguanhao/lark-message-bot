@@ -65,6 +65,7 @@ func Test_call(t *testing.T) {
 			"D(string, string, string)", "E(string...)",
 			"F(FId, F2Id...)", "G(string, string, string...)",
 			"Help()",
+			"For more info, visit github.com/caiguanhao/lark-message-bot",
 		}, "\n")},
 	}
 	for _, c := range cases {
