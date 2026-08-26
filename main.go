@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"flag"
 
 	"github.com/caiguanhao/larkslim"
+	"github.com/caiguanhao/larkslim/ws"
 )
 
 func main() {
@@ -26,5 +28,13 @@ func main() {
 		},
 		masters: *masters,
 	}
-	h.init().serve(*address)
+	h.init()
+	go h.serve(*address)
+
+	client := ws.NewClient(h.lark.api.AppId, h.lark.api.AppSecret,
+		ws.WithEventHandler(func(_ context.Context, payload []byte) error {
+			return h.handleMessagePayload(payload)
+		}),
+	)
+	log.Fatal(client.Start(context.Background()))
 }

@@ -2,8 +2,8 @@
 
 A simple message bot for Lark (Feishu / 飞书).
 
-This is a small server application, you may need to configure [nginx](#nginx) to serve
-over https and control access.
+This is a small server application. It receives Feishu events through an outbound
+WebSocket long connection, so it does not need a public event callback URL.
 
 ## Options
 
@@ -21,16 +21,16 @@ Steps to create Feishu bot:
 
 1. Create Custom App
 2. Go to Features, enable "Using Bot"
-3. Go to Event Subscriptions page, set Request URL to this server address.
-   Add "Receive message v2.0" (im.message.receive_v1) event with these
-   permissions:
+3. Go to Event Subscriptions and select "Use long connection to receive events".
+   Add "Receive message v2.0" (im.message.receive_v1) with these permissions:
    - im:message.p2p_msg:readonly (read direct messages sent to the bot)
    - im:message.group_at_msg:readonly (receive group messages that @ the bot)
    - im:message.group_msg (if you want to receive all group messages)
-   Do NOT set an Encrypt Key, encrypted events are not supported.
-4. Create a new version, set availability status to all, publish it and wait
+4. Keep the bot process running with outbound access to Feishu. No Request URL,
+   Verification Token, Encrypt Key, or nginx event route is required.
+5. Create a new version, set availability status to all, publish it and wait
    for review.
-5. You may need to add more permissions for the `members` command.
+6. You may need to add more permissions for the `members` command.
 
 ## Commands
 
@@ -134,18 +134,15 @@ See [docs](https://open.feishu.cn/document/ukTMukTMukTM/uMDMxEjLzATMx4yMwETM).
 
 ## nginx
 
-nginx config example:
+nginx is only needed if you expose the local JSON-RPC endpoint. The bot does not
+serve `/events/` or `/204/`; Feishu events use the outbound WebSocket connection.
+
+Example:
 
 ```nginx
 server {
 	listen 443 ssl http2;
 	server_name lark.yourdomain.com;
-	location /204/ {
-		proxy_pass http://127.0.0.1:32123;
-	}
-	location /events/ {
-		proxy_pass http://127.0.0.1:32123;
-	}
 	location /jsonrpc/ {
 		satisfy any;
 		allow 8.9.10.11;   # ip addresses of your other servers

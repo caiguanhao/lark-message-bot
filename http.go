@@ -3,16 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"os"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/caiguanhao/larkslim"
 )
@@ -23,9 +19,6 @@ type (
 
 		masters     string
 		mastersList []string
-
-		seenMutex    sync.Mutex
-		seenMessages map[string]time.Time
 	}
 )
 
@@ -65,16 +58,12 @@ func (_h *httpHandler) init() (h *httpHandler) {
 		log.Fatal("json-rpc error:", err)
 	}
 
-	h.seenMessages = map[string]time.Time{}
-
 	return
 }
 
 func (h *httpHandler) serve(address string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/jsonrpc/", h.handleJSONRPC)
-	mux.HandleFunc("/events/", h.handleLarkEvents)
-	mux.HandleFunc("/204/", h.handle204)
 	mux.HandleFunc("/", h.handle404)
 	server := &http.Server{
 		Addr:    address,
@@ -107,43 +96,18 @@ func (h *httpHandler) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
 		log.Error("response error:", err)
 		return
 	}
-	return
 }
 
-func (h *httpHandler) handleLarkEvents(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		return
-	}
-	log.Debug(string(body))
-	var verification struct {
-		Type      string `json:"type"`
-		Challenge string `json:"challenge"`
-	}
-	if json.Unmarshal(body, &verification) == nil &&
-		verification.Type == "url_verification" {
-		if data, err := json.Marshal(map[string]string{
-			"challenge": verification.Challenge,
-		}); err == nil {
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, string(data))
-			return
-		}
-	}
+func (h *httpHandler) handleMessagePayload(payload []byte) error {
 	var event larkslim.MessageReceiveEvent
-	if json.Unmarshal(body, &event) != nil ||
-		event.Header.EventType != "im.message.receive_v1" {
-		w.WriteHeader(http.StatusNoContent)
-		return
+	if err := json.Unmarshal(payload, &event); err != nil {
+		return err
 	}
-	// feishu re-pushes the event if the callback is not acknowledged in
-	// time, so respond first and handle the message asynchronously
-	if h.isDuplicate(event.Event.Message.MessageId) {
-		w.WriteHeader(http.StatusNoContent)
-		return
+	if event.Header.EventType != "im.message.receive_v1" {
+		return nil
 	}
-	go h.handleMessageReceive(event)
-	w.WriteHeader(http.StatusNoContent)
+	h.handleMessageReceive(event)
+	return nil
 }
 
 func (h *httpHandler) handleMessageReceive(event larkslim.MessageReceiveEvent) {
@@ -177,31 +141,6 @@ func (h *httpHandler) handleMessageReceive(event larkslim.MessageReceiveEvent) {
 			http:         h,
 		}, input))
 	}
-}
-
-func (h *httpHandler) handle204(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// isDuplicate records message id and reports whether it has been seen
-// before. Feishu re-pushes an event if the callback is not acknowledged
-// fast enough, so the same message may be delivered more than once.
-func (h *httpHandler) isDuplicate(messageId string) bool {
-	if messageId == "" {
-		return false
-	}
-	h.seenMutex.Lock()
-	defer h.seenMutex.Unlock()
-	if _, ok := h.seenMessages[messageId]; ok {
-		return true
-	}
-	h.seenMessages[messageId] = time.Now()
-	for id, t := range h.seenMessages {
-		if time.Since(t) > 10*time.Minute {
-			delete(h.seenMessages, id)
-		}
-	}
-	return false
 }
 
 func (h *httpHandler) handle404(w http.ResponseWriter, r *http.Request) {
