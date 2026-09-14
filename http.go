@@ -17,6 +17,8 @@ type (
 	httpHandler struct {
 		lark *Lark
 
+		aliyun *aliyunClient
+
 		masters     string
 		mastersList []string
 	}
@@ -37,6 +39,25 @@ func (_h *httpHandler) init() (h *httpHandler) {
 	}
 	if h.lark.api.AppSecret == "" {
 		log.Fatal("error: empty app secret")
+	}
+
+	if h.aliyun == nil {
+		h.aliyun = &aliyunClient{}
+	}
+	if h.aliyun.AccessKeyId == "" {
+		h.aliyun.AccessKeyId = os.Getenv("ALIYUN_ACCESS_KEY_ID")
+	}
+	if h.aliyun.AccessKeySecret == "" {
+		h.aliyun.AccessKeySecret = os.Getenv("ALIYUN_ACCESS_KEY_SECRET")
+	}
+	if h.aliyun.MainDomain == "" {
+		h.aliyun.MainDomain = os.Getenv("ALIYUN_MAIN_DOMAIN")
+	}
+	if h.aliyun.DefaultIP == "" {
+		h.aliyun.DefaultIP = os.Getenv("ALIYUN_DEFAULT_IP")
+	}
+	if h.aliyun.configured() {
+		log.Notice("aliyun dns enabled for domain", h.aliyun.MainDomain)
 	}
 
 	masters := strings.Split(h.masters, ",")
@@ -115,6 +136,7 @@ func (h *httpHandler) handleMessageReceive(event larkslim.MessageReceiveEvent) {
 	if event.Event.Sender.SenderType != "user" {
 		return
 	}
+	log.Info("received", event.Event.Message.MessageType, "message:", event.Event.Message.Content)
 	if event.Event.Message.MessageType != "text" {
 		return
 	}
@@ -122,6 +144,7 @@ func (h *httpHandler) handleMessageReceive(event larkslim.MessageReceiveEvent) {
 	if input == "" {
 		input = strings.TrimSpace(event.Text())
 	}
+	log.Info("message input:", input)
 	if input == "" {
 		return
 	}

@@ -4,8 +4,12 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"html"
+	"net"
 	"reflect"
+	"regexp"
 	"strings"
+	"time"
 )
 
 type (
@@ -18,9 +22,11 @@ type (
 		Call
 	}
 
-	ChatName string
-	ChatId   string
-	UserId   string
+	ChatName  string
+	ChatId    string
+	UserId    string
+	SubDomain string
+	IPAddress string
 )
 
 func (c Call) WhoAmI() string {
@@ -176,6 +182,70 @@ func (c MastersCall) List() string {
 	return groups.String()
 }
 
+var subdomainRegexp = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$`)
+
+func (c MastersCall) CreateSubdomain(subdomain SubDomain, ips ...IPAddress) string {
+	if subdomain == "" {
+		return "subdomain is needed to create a subdomain, specify like this:\ncreate_subdomain(sub-domain, ip-address...)"
+	}
+	ali := c.http.aliyun
+	if !ali.configured() {
+		return "aliyun dns is not configured, " +
+			"please specify aliyun access key id, secret, main domain and default ip"
+	}
+	name := string(subdomain)
+	// also accept a full domain name like sub.main-domain.com
+	name = strings.TrimSuffix(name, "."+ali.MainDomain)
+	if !subdomainRegexp.MatchString(name) {
+		return fmt.Sprintf(`"%s" is not a valid subdomain name`, name)
+	}
+	ip := ali.DefaultIP
+	if len(ips) > 0 && ips[0] != "" {
+		ip = string(ips[0])
+	}
+	if parsed := net.ParseIP(ip); parsed == nil || parsed.To4() == nil {
+		return fmt.Sprintf(`"%s" is not a valid IPv4 address`, ip)
+	}
+	recordId, err := ali.AddARecord(name, ip)
+	if err != nil {
+		log.Error(err)
+		return err.Error()
+	}
+	return fmt.Sprintf(`subdomain "%s" has been created, it now resolves to %s (record id: %s)`,
+		name+"."+ali.MainDomain, ip, recordId)
+}
+
+// maxSubdomainsShown limits the number of records listed by ListSubdomains
+// to keep the chat message reasonably short.
+const maxSubdomainsShown = 50
+
+func (c MastersCall) ListSubdomains() string {
+	ali := c.http.aliyun
+	if !ali.configured() {
+		return "aliyun dns is not configured, " +
+			"please specify aliyun access key id, secret, main domain and default ip"
+	}
+	records, err := ali.ListARecords()
+	if err != nil {
+		log.Error(err)
+		return err.Error()
+	}
+	if len(records) == 0 {
+		return fmt.Sprintf(`no subdomains of "%s" found`, ali.MainDomain)
+	}
+	out := make([]string, 0, len(records)+1)
+	for i, r := range records {
+		if i >= maxSubdomainsShown {
+			out = append(out, fmt.Sprintf("... and %d more", len(records)-maxSubdomainsShown))
+			break
+		}
+		out = append(out, fmt.Sprintf("%s.%s -> %s (created: %s)",
+			r.RR, ali.MainDomain, r.Value,
+			time.Unix(r.CreateTimestamp/1000, 0).Format("2006-01-02 15:04:05")))
+	}
+	return strings.Join(out, "\n")
+}
+
 const (
 	callUnknownExpression = "unknown expression"
 	callUnknownFunction   = "unknown function"
@@ -184,8 +254,10 @@ const (
 )
 
 func call(obj interface{}, expression string) string {
-	expr, err := parser.ParseExpr(expression)
+	expression = sanitizeExpression(expression)
+	expr, err := parser.ParseExpr(maskIPAddresses(expression))
 	if err != nil {
+		log.Noticef("cannot parse expression %q: %s", expression, err)
 		return callUnknownExpression
 	}
 
@@ -204,13 +276,13 @@ func call(obj interface{}, expression string) string {
 	default:
 		return callUnknownExpression
 	}
-	method = strings.ToLower(method)
+	method = normalizeMethodName(method)
 
 	rt := reflect.TypeOf(obj)
 	methodNames := map[string]string{}
 	for i := 0; i < rt.NumMethod(); i++ {
 		m := rt.Method(i)
-		methodNames[strings.ToLower(m.Name)] = m.Name
+		methodNames[normalizeMethodName(m.Name)] = m.Name
 	}
 
 	rv := reflect.ValueOf(obj)
@@ -256,6 +328,59 @@ func call(obj interface{}, expression string) string {
 		argsv = append(argsv, v)
 	}
 	return m.Call(argsv)[0].String()
+}
+
+var (
+	markdownLinkRegexp = regexp.MustCompile(`\[([^]]*)\]\([^)]*\)`)
+	htmlLinkRegexp     = regexp.MustCompile(`<a\b[^>]*>([^<]*)</a>`)
+	bareURLRegexp      = regexp.MustCompile(`https?://([a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+)/?`)
+)
+
+// sanitizeExpression unwraps markdown/html links, strips url schemes and
+// unescapes html entities in the expression: lark turns pasted domains into
+// markdown links, so CreateSubdomain(test.wanico.net) copied from a chat may
+// arrive as CreateSubdomain([test.wanico.net](http://test.wanico.net/)).
+func sanitizeExpression(expression string) string {
+	expression = markdownLinkRegexp.ReplaceAllString(expression, "$1")
+	expression = htmlLinkRegexp.ReplaceAllString(expression, "$1")
+	expression = bareURLRegexp.ReplaceAllString(expression, "$1")
+	return html.UnescapeString(expression)
+}
+
+var ipv4AddrRegexp = regexp.MustCompile(`\d+\.\d+\.\d+\.\d+`)
+
+// maskIPAddresses replaces dots in IPv4-address-like tokens (e.g. 127.0.0.1)
+// with underscores so that the expression parses as Go syntax (127_0_0_1 is a
+// valid integer literal). The replacement preserves byte offsets, so arguments
+// can still be extracted from the original expression by position.
+func maskIPAddresses(expression string) string {
+	masked := []byte(expression)
+	for _, loc := range ipv4AddrRegexp.FindAllStringIndex(expression, -1) {
+		// skip matches that are part of a larger token like room1.2.3.4 or 1.2.3.4.5
+		if loc[0] > 0 && isIPAddrTokenChar(expression[loc[0]-1]) {
+			continue
+		}
+		if loc[1] < len(expression) && isIPAddrTokenChar(expression[loc[1]]) {
+			continue
+		}
+		for i := loc[0]; i < loc[1]; i++ {
+			if masked[i] == '.' {
+				masked[i] = '_'
+			}
+		}
+	}
+	return string(masked)
+}
+
+func isIPAddrTokenChar(c byte) bool {
+	return c == '.' || c == '_' ||
+		(c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+// normalizeMethodName makes method names case and underscore insensitive,
+// so both createsubdomain(...) and create_subdomain(...) call CreateSubdomain.
+func normalizeMethodName(name string) string {
+	return strings.ReplaceAll(strings.ToLower(name), "_", "")
 }
 
 func getMethods(c interface{}) string {

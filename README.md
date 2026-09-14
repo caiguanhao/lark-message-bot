@@ -8,11 +8,15 @@ WebSocket long connection, so it does not need a public event callback URL.
 ## Options
 
 ```
-app-id     - lark app id (you can also use env LARK_APP_ID)
-app-secret - lark app secret (you can also use env LARK_APP_SECRET)
-listen     - private http server address
-verbosity  - debug, info, notice, warning, error, critical
-masters    - user ids to work for, separated by ","
+app-id                 - lark app id (you can also use env LARK_APP_ID)
+app-secret             - lark app secret (you can also use env LARK_APP_SECRET)
+listen                 - private http server address
+verbosity              - debug, info, notice, warning, error, critical
+masters                - user ids to work for, separated by ","
+aliyun-access-key-id   - aliyun access key id (you can also use env ALIYUN_ACCESS_KEY_ID)
+aliyun-access-key-secret - aliyun access key secret (you can also use env ALIYUN_ACCESS_KEY_SECRET)
+aliyun-main-domain     - main domain for create_subdomain command (you can also use env ALIYUN_MAIN_DOMAIN)
+aliyun-default-ip      - default A record IP for create_subdomain command (you can also use env ALIYUN_DEFAULT_IP)
 ```
 
 ## Creation
@@ -67,6 +71,49 @@ Remove one or more users from chat.
 ### list
 
 List all chats created by the bot.
+
+### create_subdomain(sub_domain, ip_address...)
+
+Create a new subdomain `<sub_domain>.<aliyun-main-domain>` with an A record
+pointing to `aliyun-default-ip`, using Aliyun DNS. For example, if the main
+domain is `example.com`:
+
+```
+create_subdomain(mdycgl.fs)
+```
+
+creates `mdycgl.fs.example.com`. You can also pass a full domain name like
+`mdycgl.fs.example.com`, the main domain suffix is stripped automatically.
+Command names are case and underscore insensitive, so `CREATE_SUBDOMAIN(...)`
+also works. If you copy and paste a command in lark, pasted domains may turn
+into links (`[domain](http://domain/)` or `<a href="...">domain</a>`); they are
+unwrapped automatically before parsing.
+
+To use a custom IP address instead of the default one, pass it as the second
+argument:
+
+```
+create_subdomain(abc, 127.0.0.1)
+```
+
+The aliyun access key needs the permission to manage DNS records
+of the main domain (e.g. `AliyunDNSFullAccess`).
+
+### list_subdomains
+
+List all A records of `aliyun-main-domain`, newest first:
+
+```
+list_subdomains
+```
+
+outputs lines like:
+
+```
+mdycgl.fs.example.com -> 127.0.0.1 (created: 2026-09-14 10:00:00)
+```
+
+Only the newest 50 records are shown if there are more.
 
 ### whosyourdaddy
 
